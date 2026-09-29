@@ -179,28 +179,150 @@ export default function App() {
     setActiveAnalysis(loadedResult);
   };
 
+  const compressAndMeasureChart = (
+    rawDataUrl: string
+  ): Promise<{
+    optimizedBase64: string;
+    mimeType: string;
+    pixelMetrics: {
+      isBearish: boolean;
+      obY: number;
+      currentPriceX: number;
+      currentPriceY: number;
+    };
+  }> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 1150;
+        const scale = img.width > maxW ? maxW / img.width : 1;
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve({
+            optimizedBase64: rawDataUrl,
+            mimeType: "image/png",
+            pixelMetrics: {
+              isBearish: true,
+              obY: 44,
+              currentPriceX: 78,
+              currentPriceY: 68,
+            },
+          });
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, w, h);
+        const optimizedBase64 = canvas.toDataURL("image/jpeg", 0.85);
+
+        // Scan left half vs right half of chart area for candle/EMA vertical center of mass
+        const data = ctx.getImageData(0, 0, w, h).data;
+        let leftYWeight = 0;
+        let leftCount = 0;
+        let rightYWeight = 0;
+        let rightCount = 0;
+        let lastCandleX = Math.round(w * 0.76);
+        let lastCandleY = Math.round(h * 0.62);
+
+        const yStart = Math.round(h * 0.1);
+        const yEnd = Math.round(h * 0.88);
+        const xStart = Math.round(w * 0.08);
+        const xEnd = Math.round(w * 0.88);
+        const xMid = Math.round((xStart + xEnd) / 2);
+
+        for (let y = yStart; y < yEnd; y += 3) {
+          for (let x = xStart; x < xEnd; x += 3) {
+            const idx = (y * w + x) * 4;
+            const r = data[idx];
+            const g = data[idx + 1];
+            const b = data[idx + 2];
+
+            // Detect red/green/orange candlestick or EMA pixels (non-background)
+            const isRedOrOrange = r > 155 && r - b > 65;
+            const isGreenOrCyan = g > 140 && g - r > 35;
+            if (isRedOrOrange || isGreenOrCyan) {
+              if (x < xMid) {
+                leftYWeight += y;
+                leftCount++;
+              } else {
+                rightYWeight += y;
+                rightCount++;
+                if (x >= lastCandleX - 6) {
+                  lastCandleX = x;
+                  lastCandleY = y;
+                }
+              }
+            }
+          }
+        }
+
+        const avgLeftY = leftCount > 10 ? leftYWeight / leftCount : h * 0.35;
+        const avgRightY = rightCount > 10 ? rightYWeight / rightCount : h * 0.65;
+        // In screen coordinates, larger Y means lower on screen (bearish descent)
+        const isBearish = avgRightY >= avgLeftY;
+        const currentPriceX = Math.min(88, Math.max(55, Math.round((lastCandleX / w) * 100)));
+        const currentPriceY = Math.min(86, Math.max(16, Math.round((lastCandleY / h) * 100)));
+        const obY = isBearish
+          ? Math.max(18, Math.min(62, currentPriceY - 16))
+          : Math.min(82, Math.max(38, currentPriceY + 14));
+
+        resolve({
+          optimizedBase64,
+          mimeType: "image/jpeg",
+          pixelMetrics: {
+            isBearish,
+            obY,
+            currentPriceX,
+            currentPriceY,
+          },
+        });
+      };
+      img.onerror = () => {
+        resolve({
+          optimizedBase64: rawDataUrl,
+          mimeType: "image/png",
+          pixelMetrics: {
+            isBearish: true,
+            obY: 44,
+            currentPriceX: 78,
+            currentPriceY: 68,
+          },
+        });
+      };
+      img.src = rawDataUrl;
+    });
+  };
+
   const executeVisionAnalysis = async (
     overrideBase64?: string,
     overrideMime?: string
   ) => {
     const imgToAnalyze = overrideBase64 || currentImageBase64;
-    const mimeToUse = overrideMime || currentMimeType;
     if (!imgToAnalyze || isAnalyzing) return;
     setIsAnalyzing(true);
     setErrorMsg(null);
 
     try {
+      const { optimizedBase64, mimeType: optimizedMime, pixelMetrics } =
+        await compressAndMeasureChart(imgToAnalyze);
+
       const response = await fetch("/api/analyze-chart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          imageBase64: imgToAnalyze,
-          mimeType: mimeToUse,
+          imageBase64: optimizedBase64,
+          mimeType: overrideMime && !overrideBase64 ? optimizedMime : optimizedMime,
           assetHint,
           timeframeHint,
           accountBalance,
           riskPercent,
           userNotes,
+          pixelMetrics,
         }),
       });
 
