@@ -13,6 +13,35 @@ export interface DerivIndexSpec {
   riskAdvisory: string;
 }
 
+export interface ChartAnnotations {
+  entryY: number;
+  stopLossY: number;
+  tp1Y: number;
+  tp2Y: number;
+  currentPriceX: number;
+  currentPriceY: number;
+  orderBlock: {
+    xStart: number;
+    xEnd: number;
+    yTop: number;
+    yBottom: number;
+    label: string;
+  };
+  fvgZone: {
+    xStart: number;
+    xEnd: number;
+    yTop: number;
+    yBottom: number;
+    label: string;
+  };
+  structureMarkers: {
+    xStart: number;
+    xEnd: number;
+    y: number;
+    label: string;
+  }[];
+}
+
 export interface ChartAnalysisResult {
   id: string;
   timestamp: string;
@@ -33,6 +62,7 @@ export interface ChartAnalysisResult {
   smcConceptsDetected: string[];
   confidenceNote: string;
   formattedReport: string;
+  chartAnnotations?: ChartAnnotations;
 }
 
 export const DERIV_INDICES_SPECS: DerivIndexSpec[] = [

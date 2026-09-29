@@ -22,6 +22,7 @@ import {
 import { PositionCalculatorView } from "./components/PositionCalculatorView";
 import { AssistantPanel } from "./components/AssistantPanel";
 import { DerivSpecsView } from "./components/DerivSpecsView";
+import { AnnotatedChartCanvas } from "./components/AnnotatedChartCanvas";
 
 type ActiveTab = "analyzer" | "assistant" | "calculator" | "specs";
 
@@ -134,9 +135,15 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === "string") {
-        setCurrentImageBase64(reader.result);
-        setCurrentMimeType(file.type || "image/png");
+        const base64Data = reader.result;
+        const mime = file.type || "image/png";
+        setCurrentImageBase64(base64Data);
+        setCurrentMimeType(mime);
         setSelectedPresetId("custom_upload");
+        // Immediately clear old preset analysis so previous tracings never stay on the new chart
+        setActiveAnalysis(null);
+        // Automatically launch Vision AI analysis on the newly uploaded chart
+        void executeVisionAnalysis(base64Data, mime);
       }
     };
     reader.readAsDataURL(file);
@@ -172,8 +179,13 @@ export default function App() {
     setActiveAnalysis(loadedResult);
   };
 
-  const handleRunVisionAnalysis = async () => {
-    if (!currentImageBase64 || isAnalyzing) return;
+  const executeVisionAnalysis = async (
+    overrideBase64?: string,
+    overrideMime?: string
+  ) => {
+    const imgToAnalyze = overrideBase64 || currentImageBase64;
+    const mimeToUse = overrideMime || currentMimeType;
+    if (!imgToAnalyze || isAnalyzing) return;
     setIsAnalyzing(true);
     setErrorMsg(null);
 
@@ -182,8 +194,8 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          imageBase64: currentImageBase64,
-          mimeType: currentMimeType,
+          imageBase64: imgToAnalyze,
+          mimeType: mimeToUse,
           assetHint,
           timeframeHint,
           accountBalance,
@@ -207,7 +219,7 @@ export default function App() {
           hour: "2-digit",
           minute: "2-digit",
         }),
-        imageUrl: currentImageBase64,
+        imageUrl: imgToAnalyze,
         asset: data.asset,
         timeframe: data.timeframe,
         marketStructure: data.marketStructure,
@@ -226,10 +238,19 @@ export default function App() {
           : ["Structure SMC", "Order Block", "Price Action"],
         confidenceNote: data.confidenceNote || "Analyse Vision AI complétée.",
         formattedReport: data.formattedReport,
+        chartAnnotations: data.chartAnnotations,
       };
 
       setActiveAnalysis(newResult);
-      saveHistory([newResult, ...history]);
+      setHistory((prev) => {
+        const updated = [newResult, ...prev];
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(updated.slice(0, 12)));
+        } catch {
+          // ignore quota error
+        }
+        return updated;
+      });
     } catch (err: any) {
       setErrorMsg(
         err?.message ||
@@ -238,6 +259,10 @@ export default function App() {
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  const handleRunVisionAnalysis = () => {
+    void executeVisionAnalysis();
   };
 
   const handleCopyFormattedReport = () => {
@@ -295,7 +320,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0F172A] text-slate-100 flex flex-col">
       {/* Top Bar Contract: Strictly 1 row, 3 zones */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-[#0F172A]/95 sticky top-0 z-30">
+      <header className="flex items-center justify-between gap-6 px-6 py-4 border-b border-slate-800 bg-[#0F172A]/95 sticky top-0 z-30">
         {/* Zone 1: Single text element wordmark */}
         <a
           href="#top"
@@ -303,13 +328,13 @@ export default function App() {
             e.preventDefault();
             setActiveTab("analyzer");
           }}
-          className="text-lg font-bold tracking-tight text-slate-100 whitespace-nowrap"
+          className="text-lg font-bold tracking-tight text-slate-100 whitespace-nowrap shrink-0"
         >
           Deriv Synthetic AI
         </a>
 
         {/* Zone 2: 4 clean text navigation links */}
-        <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-400">
+        <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-slate-400">
           <button
             type="button"
             onClick={() => setActiveTab("analyzer")}
@@ -519,14 +544,12 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Chart Canvas / Uploaded Image Display */}
-                  <div className="relative bg-[#0B1120] min-h-[360px] flex items-center justify-center">
+                  {/* Chart Canvas / Uploaded Image Display with AI Visual Tracing */}
+                  <div className="relative bg-[#0B1120] min-h-[360px]">
                     {currentImageBase64 ? (
-                      <img
-                        src={currentImageBase64}
-                        alt="Graphique TradingView / MT5 pour analyse SMC"
-                        referrerPolicy="no-referrer"
-                        className="w-full h-auto max-h-[480px] object-contain block"
+                      <AnnotatedChartCanvas
+                        imageUrl={currentImageBase64}
+                        analysis={activeAnalysis}
                       />
                     ) : (
                       <div className="p-12 text-center space-y-3">
@@ -541,13 +564,13 @@ export default function App() {
                     )}
 
                     {isAnalyzing && (
-                      <div className="absolute inset-0 bg-[#0F172A]/80 backdrop-blur-xs flex flex-col items-center justify-center gap-3 p-6 text-center">
+                      <div className="absolute inset-0 bg-[#0F172A]/80 backdrop-blur-xs flex flex-col items-center justify-center gap-3 p-6 text-center z-20">
                         <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
                         <div className="text-sm font-semibold text-slate-100">
-                          Analyse Vision AI en cours (SMC / ICT / Price Action)...
+                          Analyse & Traçage Visuel IA en cours (SMC / ICT / Price Action)...
                         </div>
                         <p className="text-xs text-slate-400 max-w-md">
-                          Détection de l'indice Deriv, de la structure BOS/CHoCH, des Order Blocks, FVG et calcul des niveaux Entry, SL, TP1, TP2.
+                          Détection de l'indice Deriv, traçage des Order Blocks, FVG, BOS/CHoCH et des niveaux Entry, SL, TP1, TP2 directement sur votre capture.
                         </p>
                       </div>
                     )}
@@ -853,16 +876,57 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setActiveTab("assistant")}
+                        onClick={() => {
+                          document
+                            .getElementById("direct-chat-section")
+                            ?.scrollIntoView({ behavior: "smooth" });
+                        }}
                         className="flex items-center justify-center gap-2 py-2 px-3 bg-[#0F172A] hover:bg-slate-900 text-slate-200 border border-slate-700 rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
                       >
                         <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
-                        <span>Interroger l'Assistant</span>
+                        <span>Discuter dans le Chat</span>
                       </button>
                     </div>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="bg-[#1E293B] border border-slate-800 rounded-xl p-8 text-center space-y-4">
+                    {isAnalyzing ? (
+                      <>
+                        <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mx-auto" />
+                        <h3 className="text-base font-semibold text-slate-100">
+                          Analyse & Calibrage SMC/ICT de votre capture en cours...
+                        </h3>
+                        <p className="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto">
+                          Lecture de l'échelle de prix à droite, de la tendance par rapport à la moyenne mobile (EMA) et traçage automatique des zones Order Block, FVG, Entry, SL, TP1 et TP2.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <ScanEye className="w-8 h-8 text-emerald-400 mx-auto" />
+                        <h3 className="text-base font-semibold text-slate-100">
+                          Nouvelle capture chargée — Prête pour l'analyse
+                        </h3>
+                        <p className="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto">
+                          Cliquez sur le bouton ci-dessous pour lancer l'analyse Vision IA et tracer les vrais niveaux sur votre graphique.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleRunVisionAnalysis}
+                          className="px-5 py-2.5 bg-[#16A34A] hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-2 transition-colors"
+                        >
+                          <ScanEye className="w-4 h-4" />
+                          <span>Analyser & Tracer maintenant</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
+            </div>
+
+            {/* Embedded Interactive Chat Section right below the Analyzer */}
+            <div id="direct-chat-section" className="pt-6 border-t border-slate-800">
+              <AssistantPanel activeAnalysis={activeAnalysis} />
             </div>
 
             {/* Section: Historical Setups Journal */}
