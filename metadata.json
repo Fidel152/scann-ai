@@ -1,0 +1,6 @@
+{
+  "name": "Deriv Synthetic AI",
+  "description": "Assistant expert en trading d'indices synthétiques Deriv et analyseur de graphiques MT5/TradingView par vision IA (Price Action, SMC, ICT).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
