@@ -23,13 +23,14 @@ import { PositionCalculatorView } from "./components/PositionCalculatorView";
 import { AssistantPanel } from "./components/AssistantPanel";
 import { DerivSpecsView } from "./components/DerivSpecsView";
 import { AnnotatedChartCanvas } from "./components/AnnotatedChartCanvas";
+import { LiveMarketTerminal } from "./components/LiveMarketTerminal";
 
-type ActiveTab = "analyzer" | "assistant" | "calculator" | "specs";
+type ActiveTab = "live_market" | "analyzer" | "assistant" | "calculator" | "specs";
 
 const STORAGE_KEY = "deriv_synthetic_ai_history_v1";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>("analyzer");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("live_market");
   const [selectedPresetId, setSelectedPresetId] = useState<string>("v75_m15_buy");
   const [currentImageBase64, setCurrentImageBase64] = useState<string>("");
   const [currentMimeType, setCurrentMimeType] = useState<string>("image/png");
@@ -448,15 +449,26 @@ export default function App() {
           href="#top"
           onClick={(e) => {
             e.preventDefault();
-            setActiveTab("analyzer");
+            setActiveTab("live_market");
           }}
           className="text-lg font-bold tracking-tight text-slate-100 whitespace-nowrap shrink-0"
         >
           Deriv Synthetic AI
         </a>
 
-        {/* Zone 2: 4 clean text navigation links */}
+        {/* Zone 2: Clean text navigation links */}
         <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-slate-400">
+          <button
+            type="button"
+            onClick={() => setActiveTab("live_market")}
+            className={`hover:text-slate-100 transition-colors whitespace-nowrap py-1 border-b-2 ${
+              activeTab === "live_market"
+                ? "text-slate-100 border-emerald-500"
+                : "border-transparent"
+            }`}
+          >
+            Marché Temps Réel (API Deriv)
+          </button>
           <button
             type="button"
             onClick={() => setActiveTab("analyzer")}
@@ -466,7 +478,7 @@ export default function App() {
                 : "border-transparent"
             }`}
           >
-            Analyse Vision
+            Analyse Capture Vision
           </button>
           <button
             type="button"
@@ -499,7 +511,7 @@ export default function App() {
                 : "border-transparent"
             }`}
           >
-            Spécifications Deriv
+            Spécifications
           </button>
         </nav>
 
@@ -527,10 +539,11 @@ export default function App() {
       </header>
 
       {/* Mobile Tab Selector */}
-      <div className="flex md:hidden items-center gap-1 px-4 py-2 border-b border-slate-800 bg-[#1E293B]/60 overflow-x-auto">
+      <div className="flex lg:hidden items-center gap-1 px-4 py-2 border-b border-slate-800 bg-[#1E293B]/60 overflow-x-auto">
         {(
           [
-            { id: "analyzer", label: "Analyse Vision" },
+            { id: "live_market", label: "Marché Temps Réel (Deriv)" },
+            { id: "analyzer", label: "Analyse Capture" },
             { id: "assistant", label: "Assistant SMC" },
             { id: "calculator", label: "Calculateur Lots" },
             { id: "specs", label: "Spécifications" },
@@ -553,6 +566,13 @@ export default function App() {
 
       {/* Main Content Container */}
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-6 py-8">
+        {activeTab === "live_market" && (
+          <LiveMarketTerminal
+            accountBalance={accountBalance}
+            riskPercent={riskPercent}
+          />
+        )}
+
         {activeTab === "analyzer" && (
           <div className="space-y-10">
             {/* Top Desk Header & Preset Selector */}
